@@ -5,11 +5,14 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 
+import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
 import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.Filer;
+import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
@@ -25,6 +28,14 @@ import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
 
 public class BindViewProcessor extends AbstractProcessor {
+
+    private Filer filer;
+
+    @Override
+    public synchronized void init(ProcessingEnvironment processingEnvironment) {
+        super.init(processingEnvironment);
+        filer = processingEnvironment.getFiler();
+    }
 
     @Override
     public Set<String> getSupportedAnnotationTypes() {
@@ -65,7 +76,7 @@ public class BindViewProcessor extends AbstractProcessor {
         Name simpleName = element.getSimpleName();
 
         if (hasError) {
-//            return;
+            return;
         }
 
         BindView annotation = element.getAnnotation(BindView.class);
@@ -73,11 +84,16 @@ public class BindViewProcessor extends AbstractProcessor {
         TypeMirror typeMirror = element.asType();
 
         ClassName className = ClassName.get(enclosingElement);
-        String fileName = simpleName + "Router";
+        String fileName = simpleName + "_Router";
         TypeSpec classBuilder = TypeSpec.classBuilder(fileName)
                 .addModifiers(PUBLIC, STATIC)
                 .build();
-        JavaFile.builder(className.packageName(), classBuilder);
+        try {
+            note(element, "generating file for %s", className.packageName());
+            JavaFile.builder(className.packageName(), classBuilder).build().writeTo(filer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
     }
 
