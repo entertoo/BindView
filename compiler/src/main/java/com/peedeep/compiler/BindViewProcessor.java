@@ -3,6 +3,7 @@ package com.peedeep.compiler;
 import com.peedeep.annotation.BindView;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeSpec;
 
 import java.io.IOException;
@@ -23,6 +24,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 
 import static javax.lang.model.element.ElementKind.CLASS;
+import static javax.lang.model.element.Modifier.FINAL;
 import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
@@ -61,35 +63,51 @@ public class BindViewProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> set, RoundEnvironment roundEnvironment) {
         Set<? extends Element> elements = roundEnvironment.getElementsAnnotatedWith(BindView.class);
         for (Element element : elements) {
-            processBindView(element);
+            parseBindView(element);
         }
         return true;
 
     }
 
-    private void processBindView(Element element) {
+    private void parseBindView(Element element) {
         TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
         boolean hasError = isInaccessibleViaGeneratedCode(BindView.class, "fields", element) ||
                 isBindingInWrongPackage(BindView.class, element);
 
-        Name qualifiedName = enclosingElement.getQualifiedName();
-        Name simpleName = element.getSimpleName();
+        Name qualifiedName = enclosingElement.getQualifiedName();//com.peedeep.example.MainActivity
+        Name simpleName = element.getSimpleName();//button
+        ClassName className = ClassName.get(enclosingElement);//com.peedeep.example.MainActivity
 
         if (hasError) {
             return;
         }
 
         BindView annotation = element.getAnnotation(BindView.class);
-        int value = annotation.value();
+        int value = annotation.value();//R.id.tv
         TypeMirror typeMirror = element.asType();
 
-        ClassName className = ClassName.get(enclosingElement);
-        String fileName = simpleName + "_Router";
-        TypeSpec classBuilder = TypeSpec.classBuilder(fileName)
+        MethodSpec constructorSpec = MethodSpec.constructorBuilder()
+                .addModifiers(PRIVATE)
+                .build();
+
+        MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder("bind")
                 .addModifiers(PUBLIC, STATIC)
+                .addParameter(ClassName.get(enclosingElement), "target");
+
+        methodBuilder.addStatement("target.$N = ($T) target.findViewById($L)",
+                simpleName,
+                ClassName.get(typeMirror),
+                value);
+
+        MethodSpec methodSpec = methodBuilder.build();
+
+        String fileName = "ViewBinder";
+        TypeSpec classBuilder = TypeSpec.classBuilder(fileName)
+                .addModifiers(PUBLIC, FINAL)
+                .addMethod(constructorSpec)
+                .addMethod(methodSpec)
                 .build();
         try {
-            note(element, "generating file for %s", className.packageName());
             JavaFile.builder(className.packageName(), classBuilder).build().writeTo(filer);
         } catch (IOException e) {
             e.printStackTrace();
@@ -150,10 +168,6 @@ public class BindViewProcessor extends AbstractProcessor {
 
     private void error(Element element, String message, Object... args) {
         printMessage(Diagnostic.Kind.ERROR, element, message, args);
-    }
-
-    private void note(Element element, String message, Object... args) {
-        printMessage(Diagnostic.Kind.NOTE, element, message, args);
     }
 
     private void printMessage(Diagnostic.Kind kind, Element element, String message, Object[] args) {
